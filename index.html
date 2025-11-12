@@ -19,6 +19,7 @@
   .btn[disabled]{opacity:.5;cursor:not-allowed}
   .btn.alt{background:#374151}
   .btn.copy{background:var(--green)}
+  .btn.delete{background:var(--red);padding:6px 10px;font-size:13px}
   .link{color:var(--link);text-decoration:none}
   .dropzone{
     flex:1;min-height:240px;border:2px dashed #d1d5db;border-radius:14px;background:#fafafa;
@@ -99,10 +100,10 @@
     <div class="grid">
       <table>
         <thead>
-          <tr><th>File</th><th>Uploader</th><th>Date</th><th>Link</th></tr>
+          <tr><th>File</th><th>Uploader</th><th>Date</th><th>Link</th><th>Actions</th></tr>
         </thead>
         <tbody id="recentTbody">
-          <tr><td colspan="4" class="muted">Loading…</td></tr>
+          <tr><td colspan="5" class="muted">Loading…</td></tr>
         </tbody>
       </table>
     </div>
@@ -284,6 +285,61 @@ function toBase64(arrayBuffer){
   return btoa(binary);
 }
 
+/* ---------- Delete file ---------- */
+async function deleteFile(filename, button){
+  if (!confirm(`Are you sure you want to delete "${filename}"?\n\nThis cannot be undone.`)) {
+    return;
+  }
+
+  const token = getToken();
+  if(!token){
+    els.status.textContent = 'Please sign in first.';
+    return;
+  }
+
+  button.disabled = true;
+  button.textContent = 'Deleting...';
+  els.status.textContent = `Deleting ${filename}...`;
+
+  try {
+    // First get the file's SHA (required for deletion)
+    const getFile = await gh(`/repos/${GH_OWNER}/${GH_REPO}/contents/${encodeURIComponent(filename)}`);
+    
+    if (!getFile.ok) {
+      throw new Error('File not found or no access');
+    }
+
+    const fileData = await getFile.json();
+    const user = await getUser();
+
+    // Delete the file
+    const deleteResponse = await gh(`/repos/${GH_OWNER}/${GH_REPO}/contents/${encodeURIComponent(filename)}`, {
+      method: 'DELETE',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        message: `Delete ${filename} by ${user?.login || 'unknown'}`,
+        sha: fileData.sha,
+        branch: 'main'
+      })
+    });
+
+    if (!deleteResponse.ok) {
+      const err = await deleteResponse.json().catch(()=>({}));
+      throw new Error(err.message || `Delete failed: ${deleteResponse.status}`);
+    }
+
+    els.status.textContent = `✔ Successfully deleted ${filename}`;
+    
+    // Refresh the list
+    renderRecent();
+
+  } catch (error) {
+    els.status.textContent = `Delete failed: ${error.message}`;
+    button.disabled = false;
+    button.textContent = 'Delete';
+  }
+}
+
 /* ---------- Upload flow ---------- */
 async function uploadFile(file){
   els.status.textContent = 'Uploading…';
@@ -425,10 +481,10 @@ function showSelected(f){
 
 /* ---------- Recent uploads ---------- */
 async function renderRecent(){
-  els.recentTbody.innerHTML = `<tr><td colspan="4" class="muted">Loading…</td></tr>`;
+  els.recentTbody.innerHTML = `<tr><td colspan="5" class="muted">Loading…</td></tr>`;
   const files = await listFiles();
   if(!files.length){
-    els.recentTbody.innerHTML = `<tr><td colspan="4" class="muted">No uploads yet.</td></tr>`;
+    els.recentTbody.innerHTML = `<tr><td colspan="5" class="muted">No uploads yet.</td></tr>`;
     return;
   }
 
@@ -446,13 +502,14 @@ async function renderRecent(){
   }
   rows.sort((a,b)=>(b.when?.getTime()||0)-(a.when?.getTime()||0));
 
-  els.recentTbody.innerHTML = rows.map(r=>{
+  els.recentTbody.innerHTML = rows.map((r, index)=>{
     const dateStr = r.when ? r.when.toLocaleString() : '—';
     return `<tr>
       <td>${r.name}</td>
       <td>${r.uploader}</td>
       <td>${dateStr}</td>
       <td><a class="link" href="${r.url}" target="_blank">Open</a></td>
+      <td><button class="btn delete" onclick="deleteFile('${r.name.replace(/'/g, "\\'")}', this)">Delete</button></td>
     </tr>`;
   }).join('');
 }
