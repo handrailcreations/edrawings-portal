@@ -33,9 +33,10 @@
   .status{min-height:22px;color:var(--muted);margin-top:8px}
   .chip{display:inline-block;padding:2px 8px;border-radius:999px;background:#f1f5f9;color:#111827;font-size:12px}
   .right{margin-left:auto}
-  .auth-modal{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:1000}
-  .auth-modal-content{background:white;padding:24px;border-radius:16px;max-width:400px;width:90%;text-align:center}
-  .device-code{font-family:monospace;font-size:24px;font-weight:bold;background:#f3f4f6;padding:12px;border-radius:8px;margin:16px 0;letter-spacing:2px}
+  .token-input{flex:1;padding:10px;border:1px solid #e5e7eb;border-radius:10px;font-family:monospace;font-size:14px}
+  .login-form{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+  .help-text{background:#f8fafc;padding:12px;border-radius:8px;margin-top:12px;font-size:14px}
+  .help-text a{color:var(--link)}
 </style>
 </head>
 <body>
@@ -50,12 +51,27 @@
       </div>
       <div class="right row">
         <span id="userBadge" class="chip">Not signed in</span>
-        <button id="loginBtn" class="btn">Sign in with GitHub</button>
         <button id="logoutBtn" class="btn alt" style="display:none">Sign out</button>
       </div>
     </div>
 
-    <div id="dropzone" class="dropzone">
+    <!-- Login form -->
+    <div id="loginSection" class="login-form">
+      <input id="tokenInput" type="password" placeholder="Paste your GitHub Personal Access Token here" class="token-input" />
+      <button id="loginBtn" class="btn">Sign in</button>
+    </div>
+
+    <!-- Help text -->
+    <div id="helpText" class="help-text">
+      <strong>How to get your token:</strong><br>
+      1. Go to <a href="https://github.com/settings/tokens?type=beta" target="_blank">GitHub Settings → Personal access tokens</a><br>
+      2. Click "Generate new token (fine-grained)"<br>
+      3. Select your repository: <strong>handrailcreations/edrawings-portal</strong><br>
+      4. Give it "Contents" permission (read/write)<br>
+      5. Copy the token and paste it above
+    </div>
+
+    <div id="dropzone" class="dropzone" style="display:none">
       <div>
         <div style="font-size:18px;margin-bottom:6px">Drop your <b>eDrawings .html</b> file here</div>
         <div class="muted">…or click to choose a file</div>
@@ -94,37 +110,24 @@
 
 </div>
 
-<!-- Auth Modal -->
-<div id="authModal" class="auth-modal" style="display:none">
-  <div class="auth-modal-content">
-    <h2>GitHub Authentication</h2>
-    <p>Copy this code and click the button below to authenticate:</p>
-    <div id="deviceCode" class="device-code">Loading...</div>
-    <button id="openGitHubBtn" class="btn" disabled>Open GitHub</button>
-    <p class="muted">Waiting for authentication...</p>
-    <button id="cancelAuthBtn" class="btn alt">Cancel</button>
-  </div>
-</div>
-
 <script>
 /* =========================
    CONFIG — SET THESE FIRST
    ========================= */
 // Your GitHub org/user and repo that holds the HTML files
-const GH_OWNER = 'handrailcreations';      // TODO: set me
-const GH_REPO  = 'edrawings-portal';       // TODO: set me
+const GH_OWNER = 'handrailcreations';
+const GH_REPO  = 'edrawings-portal';
 // The public base URL where Pages serves the files
-const PAGES_BASE = 'https://handrailcreations.github.io/edrawings-portal/'; // TODO: set me
-// Your OAuth App's Client ID (create this once; see instructions below)
-const GH_CLIENT_ID = 'Ov23libKk0RSXkQMvIQh'; // TODO: set me
-// Scopes: for public repo use 'public_repo'; for private use 'repo'
-const OAUTH_SCOPE = 'public_repo';
+const PAGES_BASE = 'https://handrailcreations.github.io/edrawings-portal/';
 
 const els = {
   dz: document.getElementById('dropzone'),
   fi: document.getElementById('fileInput'),
   sel: document.getElementById('selectedFile'),
-  login: document.getElementById('loginBtn'),
+  tokenInput: document.getElementById('tokenInput'),
+  loginBtn: document.getElementById('loginBtn'),
+  loginSection: document.getElementById('loginSection'),
+  helpText: document.getElementById('helpText'),
   logout: document.getElementById('logoutBtn'),
   userBadge: document.getElementById('userBadge'),
   status: document.getElementById('status'),
@@ -134,13 +137,7 @@ const els = {
   afterUpload: document.getElementById('afterUpload'),
   recentTbody: document.getElementById('recentTbody'),
   refreshBtn: document.getElementById('refreshBtn'),
-  authModal: document.getElementById('authModal'),
-  deviceCode: document.getElementById('deviceCode'),
-  openGitHubBtn: document.getElementById('openGitHubBtn'),
-  cancelAuthBtn: document.getElementById('cancelAuthBtn'),
 };
-
-function qp(obj){return new URLSearchParams(obj).toString()}
 
 /* ---------- Token storage ---------- */
 function setToken(t){sessionStorage.setItem('gh_token', t)}
@@ -150,113 +147,67 @@ function clearToken(){sessionStorage.removeItem('gh_token')}
 /* ---------- Auth UI ---------- */
 function setSignedIn(user){
   els.userBadge.textContent = user ? `Signed in: ${user.login}` : 'Not signed in';
-  els.login.style.display = user ? 'none' : '';
+  els.loginSection.style.display = user ? 'none' : '';
+  els.helpText.style.display = user ? 'none' : '';
   els.logout.style.display = user ? '' : 'none';
+  els.dz.style.display = user ? '' : 'none';
 }
 
-/* ---------- Device Flow Authentication ---------- */
-async function beginLogin(){
+/* ---------- Login with token ---------- */
+async function loginWithToken(){
+  const token = els.tokenInput.value.trim();
+  if(!token){
+    els.status.textContent = 'Please enter a GitHub Personal Access Token';
+    return;
+  }
+
+  els.status.textContent = 'Verifying token...';
+  els.loginBtn.disabled = true;
+
   try {
-    els.status.textContent = 'Starting authentication...';
-    
-    // Step 1: Request device and user codes
-    const deviceResponse = await fetch('https://github.com/login/device/code', {
-      method: 'POST',
+    // Test the token by getting user info
+    const response = await fetch('https://api.github.com/user', {
       headers: {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        client_id: GH_CLIENT_ID,
-        scope: OAUTH_SCOPE
-      })
+        'Authorization': 'Bearer ' + token,
+        'Accept': 'application/vnd.github+json'
+      }
     });
 
-    if (!deviceResponse.ok) {
-      throw new Error('Failed to get device code');
+    if (!response.ok) {
+      if (response.status === 401) {
+        throw new Error('Invalid token. Please check your token and try again.');
+      }
+      throw new Error(`GitHub API error: ${response.status}`);
     }
 
-    const deviceData = await deviceResponse.json();
+    const user = await response.json();
     
-    // Show modal with device code
-    els.deviceCode.textContent = deviceData.user_code;
-    els.openGitHubBtn.onclick = () => window.open(deviceData.verification_uri, '_blank');
-    els.openGitHubBtn.disabled = false;
-    els.authModal.style.display = 'flex';
+    // Test repository access
+    const repoResponse = await fetch(`https://api.github.com/repos/${GH_OWNER}/${GH_REPO}`, {
+      headers: {
+        'Authorization': 'Bearer ' + token,
+        'Accept': 'application/vnd.github+json'
+      }
+    });
+
+    if (!repoResponse.ok) {
+      throw new Error(`Cannot access repository ${GH_OWNER}/${GH_REPO}. Make sure your token has access to this repository.`);
+    }
+
+    // Success!
+    setToken(token);
+    setSignedIn(user);
+    els.status.textContent = `Successfully signed in as ${user.login}!`;
+    els.tokenInput.value = '';
     
-    // Step 2: Poll for access token
-    const pollForToken = async () => {
-      const tokenResponse = await fetch('https://github.com/login/oauth/access_token', {
-        method: 'POST',
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          client_id: GH_CLIENT_ID,
-          device_code: deviceData.device_code,
-          grant_type: 'urn:ietf:params:oauth:grant-type:device_code'
-        })
-      });
-
-      const tokenData = await tokenResponse.json();
-      
-      if (tokenData.access_token) {
-        // Success!
-        setToken(tokenData.access_token);
-        els.authModal.style.display = 'none';
-        els.status.textContent = 'Successfully signed in!';
-        
-        // Update UI
-        const user = await getUser();
-        setSignedIn(user);
-        return true;
-      } else if (tokenData.error === 'authorization_pending') {
-        // Still waiting
-        return false;
-      } else if (tokenData.error === 'slow_down') {
-        // Increase interval
-        return false;
-      } else {
-        // Error
-        throw new Error(tokenData.error_description || tokenData.error);
-      }
-    };
-
-    // Poll every 5 seconds
-    const pollInterval = setInterval(async () => {
-      try {
-        const success = await pollForToken();
-        if (success) {
-          clearInterval(pollInterval);
-        }
-      } catch (error) {
-        clearInterval(pollInterval);
-        els.authModal.style.display = 'none';
-        els.status.textContent = 'Authentication failed: ' + error.message;
-      }
-    }, 5000);
-
-    // Cancel button
-    els.cancelAuthBtn.onclick = () => {
-      clearInterval(pollInterval);
-      els.authModal.style.display = 'none';
-      els.status.textContent = 'Authentication cancelled';
-    };
+    // Load recent uploads
+    renderRecent();
 
   } catch (error) {
-    els.status.textContent = 'Authentication error: ' + error.message;
+    els.status.textContent = error.message;
+  } finally {
+    els.loginBtn.disabled = false;
   }
-}
-
-/* ---------- Handle OAuth redirect (kept for compatibility) ---------- */
-async function finishLogin(){
-  const url = new URL(window.location.href);
-  const code = url.searchParams.get('code');
-  if(!code) return;
-  
-  // Clean URL if there's a code parameter (from old OAuth flow)
-  history.replaceState({}, '', window.location.pathname);
 }
 
 /* ---------- GitHub API helpers ---------- */
@@ -270,24 +221,38 @@ async function gh(path, opts={}){
 async function getUser(){
   const t = getToken();
   if(!t) return null;
-  const r = await gh('/user');
-  if(!r.ok) return null;
-  return r.json();
+  try {
+    const r = await gh('/user');
+    if(!r.ok) {
+      clearToken();
+      return null;
+    }
+    return r.json();
+  } catch (error) {
+    return null;
+  }
 }
 
 async function listFiles(){
-  // list repo root; filter to .html
-  const r = await gh(`/repos/${GH_OWNER}/${GH_REPO}/contents/`);
-  if(!r.ok){ return []; }
-  const arr = await r.json();
-  return arr.filter(x => x.type==='file' && x.name.toLowerCase().endsWith('.html'));
+  try {
+    const r = await gh(`/repos/${GH_OWNER}/${GH_REPO}/contents/`);
+    if(!r.ok){ return []; }
+    const arr = await r.json();
+    return arr.filter(x => x.type==='file' && x.name.toLowerCase().endsWith('.html') && x.name !== 'index.html');
+  } catch (error) {
+    return [];
+  }
 }
 
 async function getLatestCommitForPath(path){
-  const r = await gh(`/repos/${GH_OWNER}/${GH_REPO}/commits?path=${encodeURIComponent(path)}&per_page=1`);
-  if(!r.ok) return null;
-  const [commit] = await r.json();
-  return commit || null;
+  try {
+    const r = await gh(`/repos/${GH_OWNER}/${GH_REPO}/commits?path=${encodeURIComponent(path)}&per_page=1`);
+    if(!r.ok) return null;
+    const [commit] = await r.json();
+    return commit || null;
+  } catch (error) {
+    return null;
+  }
 }
 
 function fileSafeName(name){
@@ -307,62 +272,112 @@ async function uploadFile(file){
   els.status.textContent = 'Uploading…';
   const token = getToken();
   if(!token){
-    els.status.textContent = 'Please sign in with GitHub first.';
+    els.status.textContent = 'Please sign in first.';
     return;
   }
 
-  const arrayBuf = await file.arrayBuffer();
-  const b64 = toBase64(arrayBuf);
-  const filename = fileSafeName(file.name || 'model.html');
+  try {
+    // First, let's verify we can access the repository
+    els.status.textContent = 'Checking repository access…';
+    const repoCheck = await gh(`/repos/${GH_OWNER}/${GH_REPO}`);
+    if (!repoCheck.ok) {
+      if (repoCheck.status === 404) {
+        throw new Error(`Repository ${GH_OWNER}/${GH_REPO} not found or no access. Check your token permissions.`);
+      }
+      throw new Error(`Repository access failed: ${repoCheck.status}`);
+    }
 
-  // check if file exists to pass sha for update
-  let existingSha = null;
-  const head = await gh(`/repos/${GH_OWNER}/${GH_REPO}/contents/${encodeURIComponent(filename)}`);
-  if(head.ok){
-    const meta = await head.json();
-    existingSha = meta.sha;
+    els.status.textContent = 'Processing file…';
+    const arrayBuf = await file.arrayBuffer();
+    const b64 = toBase64(arrayBuf);
+    const filename = fileSafeName(file.name || 'model.html');
+
+    els.status.textContent = 'Checking if file exists…';
+    // Check if file exists to pass sha for update
+    let existingSha = null;
+    const head = await gh(`/repos/${GH_OWNER}/${GH_REPO}/contents/${encodeURIComponent(filename)}`);
+    if(head.ok){
+      const meta = await head.json();
+      existingSha = meta.sha;
+      els.status.textContent = `Updating existing file: ${filename}`;
+    } else {
+      els.status.textContent = `Creating new file: ${filename}`;
+    }
+
+    const user = await getUser();
+    const message = existingSha
+      ? `Update ${filename} by ${user?.login || 'unknown'}`
+      : `Add ${filename} by ${user?.login || 'unknown'}`;
+
+    const body = {
+      message,
+      content: b64,
+      branch: 'main'
+    };
+    if(existingSha) body.sha = existingSha;
+
+    els.status.textContent = 'Uploading to GitHub…';
+    const uploadUrl = `/repos/${GH_OWNER}/${GH_REPO}/contents/${encodeURIComponent(filename)}`;
+    console.log('Upload URL:', uploadUrl);
+    console.log('Upload body:', body);
+
+    const put = await gh(uploadUrl, {
+      method:'PUT',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(body)
+    });
+
+    console.log('Upload response status:', put.status);
+    
+    if(!put.ok){
+      const err = await put.json().catch(()=>({}));
+      console.log('Upload error:', err);
+      
+      let errorMsg = err.message || `HTTP ${put.status}`;
+      if (put.status === 404) {
+        errorMsg = `Repository or branch not found. Check: 1) Repository exists, 2) Branch is 'main', 3) Token has 'Contents' permission`;
+      } else if (put.status === 403) {
+        errorMsg = `Permission denied. Your token needs 'Contents' write permission for this repository`;
+      } else if (put.status === 422) {
+        errorMsg = `Invalid request: ${err.message || 'Check file content and branch name'}`;
+      }
+      
+      throw new Error(errorMsg);
+    }
+
+    els.status.textContent = 'Uploaded ✔';
+    const url = PAGES_BASE + encodeURIComponent(filename);
+    els.shareUrl.value = url;
+    els.afterUpload.style.display = '';
+    els.openBtn.href = url;
+
+    // Refresh recent list
+    renderRecent();
+
+  } catch (error) {
+    els.status.textContent = 'Upload failed: ' + error.message;
+    console.error('Upload error:', error);
   }
-
-  const user = await getUser();
-  const message = existingSha
-    ? `Update ${filename} by ${user?.login || 'unknown'}`
-    : `Add ${filename} by ${user?.login || 'unknown'}`;
-
-  const body = {
-    message,
-    content: b64,
-    branch: 'main'
-  };
-  if(existingSha) body.sha = existingSha;
-
-  const put = await gh(`/repos/${GH_OWNER}/${GH_REPO}/contents/${encodeURIComponent(filename)}`, {
-    method:'PUT',
-    headers:{'Content-Type':'application/json'},
-    body: JSON.stringify(body)
-  });
-
-  if(!put.ok){
-    const err = await put.json().catch(()=>({}));
-    els.status.textContent = 'Upload failed: ' + (err.message || put.status);
-    return;
-  }
-
-  els.status.textContent = 'Uploaded ✔';
-  const url = PAGES_BASE + encodeURIComponent(filename);
-  els.shareUrl.value = url;
-  els.afterUpload.style.display = '';
-  els.openBtn.href = url;
-
-  // refresh recent list
-  renderRecent();
 }
 
 /* ---------- UI wiring ---------- */
-els.login.addEventListener('click', beginLogin);
-els.logout.addEventListener('click', ()=>{ clearToken(); setSignedIn(null); });
+els.loginBtn.addEventListener('click', loginWithToken);
+els.tokenInput.addEventListener('keypress', (e) => {
+  if (e.key === 'Enter') loginWithToken();
+});
+els.logout.addEventListener('click', ()=>{ 
+  clearToken(); 
+  setSignedIn(null);
+  els.status.textContent = '';
+});
 els.copyBtn.addEventListener('click', ()=>{
-  els.shareUrl.select(); document.execCommand('copy');
-  els.status.textContent = 'Link copied to clipboard.';
+  els.shareUrl.select(); 
+  navigator.clipboard.writeText(els.shareUrl.value).then(() => {
+    els.status.textContent = 'Link copied to clipboard.';
+  }).catch(() => {
+    document.execCommand('copy');
+    els.status.textContent = 'Link copied to clipboard.';
+  });
 });
 els.refreshBtn.addEventListener('click', ()=>renderRecent());
 
@@ -398,7 +413,7 @@ async function renderRecent(){
     return;
   }
 
-  // sort by latest commit date
+  // Sort by latest commit date
   const rows = [];
   for(const f of files){
     const commit = await getLatestCommitForPath(f.path);
@@ -425,10 +440,11 @@ async function renderRecent(){
 
 /* ---------- Boot ---------- */
 (async function boot(){
-  await finishLogin();                 // handle ?code=… after GitHub redirect
   const user = await getUser();
   setSignedIn(user);
-  renderRecent();
+  if (user) {
+    renderRecent();
+  }
 })();
 </script>
 </body>
