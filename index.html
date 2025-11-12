@@ -94,7 +94,8 @@
   <!-- BOTTOM: Recent uploads -->
   <section class="card">
     <div class="row">
-      <h1 style="margin:0">Recent uploads</h1>
+      <h1 style="margin:0">All Uploads</h1>
+      <span id="fileCount" class="chip" style="margin-left:8px">0 files</span>
       <button id="refreshBtn" class="btn alt right">Refresh</button>
     </div>
     <div class="grid">
@@ -138,6 +139,7 @@ const els = {
   afterUpload: document.getElementById('afterUpload'),
   recentTbody: document.getElementById('recentTbody'),
   refreshBtn: document.getElementById('refreshBtn'),
+  fileCount: document.getElementById('fileCount'),
 };
 
 /* ---------- Token storage ---------- */
@@ -482,13 +484,19 @@ function showSelected(f){
 /* ---------- Recent uploads ---------- */
 async function renderRecent(){
   els.recentTbody.innerHTML = `<tr><td colspan="5" class="muted">Loading…</td></tr>`;
+  els.fileCount.textContent = 'Loading...';
+  
   const files = await listFiles();
+  
+  // Update file count
+  els.fileCount.textContent = `${files.length} file${files.length !== 1 ? 's' : ''}`;
+  
   if(!files.length){
     els.recentTbody.innerHTML = `<tr><td colspan="5" class="muted">No uploads yet.</td></tr>`;
     return;
   }
 
-  // Sort by latest commit date
+  // Sort by latest commit date (most recent first)
   const rows = [];
   for(const f of files){
     const commit = await getLatestCommitForPath(f.path);
