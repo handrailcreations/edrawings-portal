@@ -213,9 +213,26 @@ async function loginWithToken(){
 /* ---------- GitHub API helpers ---------- */
 async function gh(path, opts={}){
   const token = getToken();
-  const headers = { 'Accept':'application/vnd.github+json' };
-  if(token) headers['Authorization'] = 'Bearer ' + token;
-  return fetch(`https://api.github.com${path}`, {headers, ...opts});
+  if (!token) {
+    throw new Error('No authentication token found');
+  }
+  
+  const headers = { 
+    'Accept': 'application/vnd.github+json',
+    'X-GitHub-Api-Version': '2022-11-28'
+  };
+  
+  headers['Authorization'] = `Bearer ${token}`;
+  
+  // Merge with any additional headers from opts
+  if (opts.headers) {
+    Object.assign(headers, opts.headers);
+  }
+  
+  return fetch(`https://api.github.com${path}`, {
+    ...opts,
+    headers
+  });
 }
 
 async function getUser(){
@@ -320,6 +337,8 @@ async function uploadFile(file){
     const uploadUrl = `/repos/${GH_OWNER}/${GH_REPO}/contents/${encodeURIComponent(filename)}`;
     console.log('Upload URL:', uploadUrl);
     console.log('Upload body:', body);
+    console.log('Token present:', !!token);
+    console.log('Token starts with:', token ? token.substring(0, 10) + '...' : 'NO TOKEN');
 
     const put = await gh(uploadUrl, {
       method:'PUT',
