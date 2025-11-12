@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>eDrawings Upload Portal</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root{
+    --bg:#f3f4f6; --card:#ffffff; --muted:#6b7280; --accent:#111827;
+    --green:#10b981; --red:#ef4444; --link:#2563eb;
+  }
+  html,body{height:100%;margin:0;background:var(--bg);font:16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial}
+  .wrap{display:grid;grid-template-rows:1fr 1fr;min-height:100vh;gap:16px;padding:16px;box-sizing:border-box}
+  .card{background:var(--card);border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,.06);padding:20px;display:flex;flex-direction:column}
+  .row{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+  h1{margin:0 0 6px 0;font-size:20px}
+  .muted{color:var(--muted)}
+  .btn{appearance:none;border:none;background:var(--accent);color:white;border-radius:10px;padding:10px 14px;cursor:pointer}
+  .btn[disabled]{opacity:.5;cursor:not-allowed}
+  .btn.alt{background:#374151}
+  .btn.copy{background:var(--green)}
+  .link{color:var(--link);text-decoration:none}
+  .dropzone{
+    flex:1;min-height:240px;border:2px dashed #d1d5db;border-radius:14px;background:#fafafa;
+    display:flex;align-items:center;justify-content:center;text-align:center;padding:20px
+  }
+  .dropzone.drag{background:#eef2ff;border-color:#93c5fd}
+  .fileline{display:flex;align-items:center;gap:10px;margin-top:12px;word-break:break-all}
+  .grid{overflow:auto;margin-top:12px;border:1px solid #e5e7eb;border-radius:12px}
+  table{border-collapse:collapse;width:100%}
+  th,td{padding:10px 12px;border-bottom:1px solid #f1f5f9;text-align:left}
+  th{background:#f8fafc;font-weight:600;font-size:14px}
+  .status{min-height:22px;color:var(--muted);margin-top:8px}
+  .chip{display:inline-block;padding:2px 8px;border-radius:999px;background:#f1f5f9;color:#111827;font-size:12px}
+  .right{margin-left:auto}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- TOP: Upload area -->
+  <section class="card" id="top">
+    <div class="row">
+      <div>
+        <h1>Upload eDrawings HTML</h1>
+        <div class="muted">Drag & drop your <strong>.html</strong> file below. You’ll get a shareable link immediately.</div>
+      </div>
+      <div class="right row">
+        <span id="userBadge" class="chip">Not signed in</span>
+        <button id="loginBtn" class="btn">Sign in with GitHub</button>
+        <button id="logoutBtn" class="btn alt" style="display:none">Sign out</button>
+      </div>
+    </div>
+
+    <div id="dropzone" class="dropzone">
+      <div>
+        <div style="font-size:18px;margin-bottom:6px">Drop your <b>eDrawings .html</b> file here</div>
+        <div class="muted">…or click to choose a file</div>
+      </div>
+      <input id="fileInput" type="file" accept=".html" style="display:none" />
+    </div>
+
+    <div class="fileline" id="selectedFile" style="display:none"></div>
+
+    <div class="row" id="afterUpload" style="display:none">
+      <input id="shareUrl" type="text" readonly style="flex:1;padding:10px;border:1px solid #e5e7eb;border-radius:10px" />
+      <button id="copyBtn" class="btn copy">Copy link</button>
+      <a id="openBtn" class="btn" href="#" target="_blank">Open</a>
+    </div>
+
+    <div class="status" id="status"></div>
+  </section>
+
+  <!-- BOTTOM: Recent uploads -->
+  <section class="card">
+    <div class="row">
+      <h1 style="margin:0">Recent uploads</h1>
+      <button id="refreshBtn" class="btn alt right">Refresh</button>
+    </div>
+    <div class="grid">
+      <table>
+        <thead>
+          <tr><th>File</th><th>Uploader</th><th>Date</th><th>Link</th></tr>
+        </thead>
+        <tbody id="recentTbody">
+          <tr><td colspan="4" class="muted">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+</div>
+
+<script>
+/* =========================
+   CONFIG — SET THESE FIRST
+   ========================= */
+// Your GitHub org/user and repo that holds the HTML files
+const GH_OWNER = 'handrailcreations';      // TODO: set me
+const GH_REPO  = 'edrawings-portal';       // TODO: set me
+// The public base URL where Pages serves the files
+const PAGES_BASE = 'https://handrailcreations.github.io/edrawings-portal/'; // TODO: set me
+// Your OAuth App's Client ID (create this once; see instructions below)
+const GH_CLIENT_ID = 'Ov23libKk0RSXkQMvIQh'; // TODO: set me
+// Scopes: for public repo use 'public_repo'; for private use 'repo'
+const OAUTH_SCOPE = 'public_repo';
+
+/* =========================
+   OAUTH with PKCE (no secret)
+   =========================
+   GitHub added PKCE support for OAuth (2025-07) so we can run this
+   purely client-side on GitHub Pages. See: https://github.blog/changelog/2025-07-14-pkce-support-for-oauth-and-github-app-authentication/
+*/
+const oauth = {
+  authorizeUrl: 'https://github.com/login/oauth/authorize',
+  tokenUrl:     'https://github.com/login/oauth/access_token',
+};
+
+const els = {
+  dz: document.getElementById('dropzone'),
+  fi: document.getElementById('fileInput'),
+  sel: document.getElementById('selectedFile'),
+  login: document.getElementById('loginBtn'),
+  logout: document.getElementById('logoutBtn'),
+  userBadge: document.getElementById('userBadge'),
+  status: document.getElementById('status'),
+  shareUrl: document.getElementById('shareUrl'),
+  copyBtn: document.getElementById('copyBtn'),
+  openBtn: document.getElementById('openBtn'),
+  afterUpload: document.getElementById('afterUpload'),
+  recentTbody: document.getElementById('recentTbody'),
+  refreshBtn: document.getElementById('refreshBtn'),
+};
+
+/* ---------- PKCE helpers ---------- */
+async function sha256(str){const enc=new TextEncoder().encode(str);const buf=await crypto.subtle.digest('SHA-256',enc);return btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')}
+function randomString(n=64){const a='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';let s='';for(let i=0;i<n;i++) s+=a[Math.floor(Math.random()*a.length)];return s}
+function qp(obj){return new URLSearchParams(obj).toString()}
+
+/* ---------- Token storage ---------- */
+function setToken(t){sessionStorage.setItem('gh_token', t)}
+function getToken(){return sessionStorage.getItem('gh_token')}
+function clearToken(){sessionStorage.removeItem('gh_token')}
+
+/* ---------- Auth UI ---------- */
+function setSignedIn(user){
+  els.userBadge.textContent = user ? `Signed in: ${user.login}` : 'Not signed in';
+  els.login.style.display = user ? 'none' : '';
+  els.logout.style.display = user ? '' : 'none';
+}
+
+/* ---------- Start OAuth ---------- */
+async function beginLogin(){
+  const codeVerifier = randomString(64);
+  const codeChallenge = await sha256(codeVerifier);
+  sessionStorage.setItem('pkce_verifier', codeVerifier);
+
+  const params = {
+    client_id: GH_CLIENT_ID,
+    scope: OAUTH_SCOPE,
+    redirect_uri: window.location.origin + window.location.pathname, // this page
+    state: randomString(24),
+    code_challenge: codeChallenge,
+    code_challenge_method: 'S256'
+  };
+  window.location = `${oauth.authorizeUrl}?${qp(params)}`;
+}
+
+/* ---------- Finish OAuth (exchange code for token) ---------- */
+async function finishLogin(){
+  const url = new URL(window.location.href);
+  const code = url.searchParams.get('code');
+  if(!code) return;
+
+  const codeVerifier = sessionStorage.getItem('pkce_verifier');
+  if(!codeVerifier){
+    els.status.textContent = 'Auth error: missing PKCE verifier.';
+    return;
+  }
+
+  // Exchange code for token (Accept JSON)
+  const res = await fetch(oauth.tokenUrl, {
+    method:'POST',
+    headers:{'Accept':'application/json','Content-Type':'application/json'},
+    body: JSON.stringify({
+      client_id: GH_CLIENT_ID,
+      grant_type: 'authorization_code',
+      code,
+      redirect_uri: window.location.origin + window.location.pathname,
+      code_verifier: codeVerifier
+    })
+  });
+  const data = await res.json();
+  if(data.error){
+    els.status.textContent = 'Auth error: ' + (data.error_description || data.error);
+    return;
+  }
+  setToken(data.access_token);
+  // Clean URL
+  history.replaceState({}, '', window.location.pathname);
+}
+
+/* ---------- GitHub API helpers ---------- */
+async function gh(path, opts={}){
+  const token = getToken();
+  const headers = { 'Accept':'application/vnd.github+json' };
+  if(token) headers['Authorization'] = 'Bearer ' + token;
+  return fetch(`https://api.github.com${path}`, {headers, ...opts});
+}
+
+async function getUser(){
+  const t = getToken();
+  if(!t) return null;
+  const r = await gh('/user');
+  if(!r.ok) return null;
+  return r.json();
+}
+
+async function listFiles(){
+  // list repo root; filter to .html
+  const r = await gh(`/repos/${GH_OWNER}/${GH_REPO}/contents/`);
+  if(!r.ok){ return []; }
+  const arr = await r.json();
+  return arr.filter(x => x.type==='file' && x.name.toLowerCase().endsWith('.html'));
+}
+
+async function getLatestCommitForPath(path){
+  const r = await gh(`/repos/${GH_OWNER}/${GH_REPO}/commits?path=${encodeURIComponent(path)}&per_page=1`);
+  if(!r.ok) return null;
+  const [commit] = await r.json();
+  return commit || null;
+}
+
+function fileSafeName(name){
+  return name.replace(/\s+/g,'_').replace(/[^\w\-\.]/g,'');
+}
+
+function toBase64(arrayBuffer){
+  let binary = '';
+  const bytes = new Uint8Array(arrayBuffer);
+  const len = bytes.byteLength;
+  for(let i=0;i<len;i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary);
+}
+
+/* ---------- Upload flow ---------- */
+async function uploadFile(file){
+  els.status.textContent = 'Uploading…';
+  const token = getToken();
+  if(!token){
+    els.status.textContent = 'Please sign in with GitHub first.';
+    return;
+  }
+
+  const arrayBuf = await file.arrayBuffer();
+  const b64 = toBase64(arrayBuf);
+  const filename = fileSafeName(file.name || 'model.html');
+
+  // check if file exists to pass sha for update
+  let existingSha = null;
+  const head = await gh(`/repos/${GH_OWNER}/${GH_REPO}/contents/${encodeURIComponent(filename)}`);
+  if(head.ok){
+    const meta = await head.json();
+    existingSha = meta.sha;
+  }
+
+  const user = await getUser();
+  const message = existingSha
+    ? `Update ${filename} by ${user?.login || 'unknown'}`
+    : `Add ${filename} by ${user?.login || 'unknown'}`;
+
+  const body = {
+    message,
+    content: b64,
+    branch: 'main'
+  };
+  if(existingSha) body.sha = existingSha;
+
+  const put = await gh(`/repos/${GH_OWNER}/${GH_REPO}/contents/${encodeURIComponent(filename)}`, {
+    method:'PUT',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(body)
+  });
+
+  if(!put.ok){
+    const err = await put.json().catch(()=>({}));
+    els.status.textContent = 'Upload failed: ' + (err.message || put.status);
+    return;
+  }
+
+  els.status.textContent = 'Uploaded ✔';
+  const url = PAGES_BASE + encodeURIComponent(filename);
+  els.shareUrl.value = url;
+  els.afterUpload.style.display = '';
+  els.openBtn.href = url;
+
+  // refresh recent list
+  renderRecent();
+}
+
+/* ---------- UI wiring ---------- */
+els.login.addEventListener('click', beginLogin);
+els.logout.addEventListener('click', ()=>{ clearToken(); setSignedIn(null); });
+els.copyBtn.addEventListener('click', ()=>{
+  els.shareUrl.select(); document.execCommand('copy');
+  els.status.textContent = 'Link copied to clipboard.';
+});
+els.refreshBtn.addEventListener('click', ()=>renderRecent());
+
+/* Drag & drop */
+['dragenter','dragover'].forEach(ev=>{
+  els.dz.addEventListener(ev, e=>{ e.preventDefault(); els.dz.classList.add('drag'); });
+});
+['dragleave','drop'].forEach(ev=>{
+  els.dz.addEventListener(ev, e=>{ e.preventDefault(); els.dz.classList.remove('drag'); });
+});
+els.dz.addEventListener('click', ()=>els.fi.click());
+els.dz.addEventListener('drop', e=>{
+  const f = e.dataTransfer?.files?.[0];
+  if(f){ showSelected(f); uploadFile(f); }
+});
+els.fi.addEventListener('change', e=>{
+  const f = e.target.files?.[0];
+  if(f){ showSelected(f); uploadFile(f); }
+});
+function showSelected(f){
+  els.sel.style.display = '';
+  els.sel.textContent = `Selected: ${f.name} (${(f.size/1024/1024).toFixed(2)} MB)`;
+  els.afterUpload.style.display = 'none';
+  els.status.textContent = '';
+}
+
+/* ---------- Recent uploads ---------- */
+async function renderRecent(){
+  els.recentTbody.innerHTML = `<tr><td colspan="4" class="muted">Loading…</td></tr>`;
+  const files = await listFiles();
+  if(!files.length){
+    els.recentTbody.innerHTML = `<tr><td colspan="4" class="muted">No uploads yet.</td></tr>`;
+    return;
+  }
+
+  // sort by latest commit date
+  const rows = [];
+  for(const f of files){
+    const commit = await getLatestCommitForPath(f.path);
+    const when = commit?.commit?.committer?.date || null;
+    const uploader = (commit?.author?.login) || (commit?.committer?.login) || '—';
+    rows.push({
+      name: f.name,
+      url: PAGES_BASE + encodeURIComponent(f.name),
+      uploader, when: when ? new Date(when) : null
+    });
+  }
+  rows.sort((a,b)=>(b.when?.getTime()||0)-(a.when?.getTime()||0));
+
+  els.recentTbody.innerHTML = rows.map(r=>{
+    const dateStr = r.when ? r.when.toLocaleString() : '—';
+    return `<tr>
+      <td>${r.name}</td>
+      <td>${r.uploader}</td>
+      <td>${dateStr}</td>
+      <td><a class="link" href="${r.url}" target="_blank">Open</a></td>
+    </tr>`;
+  }).join('');
+}
+
+/* ---------- Boot ---------- */
+(async function boot(){
+  await finishLogin();                 // handle ?code=… after GitHub redirect
+  const user = await getUser();
+  setSignedIn(user);
+  renderRecent();
+})();
+</script>
+</body>
+</html>
+
