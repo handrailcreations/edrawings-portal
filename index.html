@@ -30,7 +30,11 @@
   .grid{overflow:auto;margin-top:12px;border:1px solid #e5e7eb;border-radius:12px}
   table{border-collapse:collapse;width:100%}
   th,td{padding:10px 12px;border-bottom:1px solid #f1f5f9;text-align:left}
-  th{background:#f8fafc;font-weight:600;font-size:14px}
+  th{background:#f8fafc;font-weight:600;font-size:14px;cursor:pointer;user-select:none}
+  th:hover{background:#e2e8f0}
+  th.sortable::after{content:'⇅';margin-left:4px;opacity:0.3}
+  th.sort-asc::after{content:'↑';opacity:1}
+  th.sort-desc::after{content:'↓';opacity:1}
   .status{min-height:22px;color:var(--muted);margin-top:8px}
   .chip{display:inline-block;padding:2px 8px;border-radius:999px;background:#f1f5f9;color:#111827;font-size:12px}
   .right{margin-left:auto}
@@ -47,8 +51,8 @@
   <section class="card" id="top">
     <div class="row">
       <div>
-        <h1>Upload eDrawings HTML</h1>
-        <div class="muted">Drag & drop your <strong>.html</strong> file below. You'll get a shareable link immediately.</div>
+        <h1>Handrail Creations eDrawings HTML Upload</h1>
+        <div class="muted">Drag & drop your <strong>.html</strong> file below. You'll get a shareable link immediately.<br><strong>Note:</strong> Files take approximately 30 seconds to go live after upload.</div>
       </div>
       <div class="right row">
         <span id="userBadge" class="chip">Not signed in</span>
@@ -101,7 +105,13 @@
     <div class="grid">
       <table>
         <thead>
-          <tr><th>File</th><th>Uploader</th><th>Date</th><th>Link</th><th>Actions</th></tr>
+          <tr>
+            <th class="sortable" onclick="sortTable('name')">File</th>
+            <th class="sortable" onclick="sortTable('uploader')">Uploader</th>
+            <th class="sortable sort-desc" onclick="sortTable('date')">Date</th>
+            <th>Link</th>
+            <th>Actions</th>
+          </tr>
         </thead>
         <tbody id="recentTbody">
           <tr><td colspan="5" class="muted">Loading…</td></tr>
