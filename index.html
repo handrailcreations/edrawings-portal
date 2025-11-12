@@ -146,6 +146,10 @@ const GH_REPO  = 'edrawings-portal';
 // The public base URL where Pages serves the files
 const PAGES_BASE = 'https://handrailcreations.github.io/edrawings-portal/';
 
+/* ---------- Sorting state ---------- */
+let currentSort = { column: 'date', direction: 'desc' };
+let allFiles = [];
+
 const els = {
   dz: document.getElementById('dropzone'),
   fi: document.getElementById('fileInput'),
@@ -496,14 +500,6 @@ function toggleTheme() {
 }
 
 els.themeToggle.addEventListener('click', toggleTheme);
-
-/* ---------- Attach sort handlers ---------- */
-document.querySelectorAll('th.sortable').forEach(th => {
-  th.addEventListener('click', function() {
-    const column = this.getAttribute('data-column');
-    sortTable(column);
-  });
-});
 
 /* Drag & drop */
 ['dragenter','dragover'].forEach(ev=>{
