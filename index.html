@@ -29,7 +29,7 @@
   .row{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
   h1{margin:0 0 6px 0;font-size:20px}
   .muted{color:var(--muted)}
-  .btn{appearance:none;border:none;background:var(--accent);color:white;border-radius:10px;padding:10px 14px;cursor:pointer;text-decoration:none;display:inline-block;box-sizing:border-box}
+  .btn{appearance:none;border:none;background:var(--accent);color:white;border-radius:10px;padding:10px 14px;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;line-height:1;font-size:16px;font-family:inherit}
   .btn[disabled]{opacity:.5;cursor:not-allowed}
   .btn.alt{background:#374151}
   .btn.copy{background:var(--green)}
@@ -65,7 +65,7 @@
   <section class="card" id="top">
     <div class="row">
       <div>
-        <h1>Handrail Creations - eDrawings HTML Upload</h1>
+        <h1>Handrail Creations eDrawings HTML Upload</h1>
         <div class="muted">Drag & drop your <strong>.html</strong> file below. You'll get a shareable link immediately.<br><strong>Note:</strong> Files take approximately 30 seconds to go live after upload.</div>
       </div>
       <div class="right row">
@@ -171,6 +171,8 @@ const els = {
   fileCount: document.getElementById('fileCount'),
   themeToggle: document.getElementById('themeToggle'),
 };
+
+function qp(obj){return new URLSearchParams(obj).toString()}
 
 /* ---------- Token storage ---------- */
 function setToken(t){sessionStorage.setItem('gh_token', t)}
@@ -467,73 +469,6 @@ async function uploadFile(file){
   }
 }
 
-/* ---------- UI wiring ---------- */
-els.loginBtn.addEventListener('click', loginWithToken);
-els.tokenInput.addEventListener('keypress', (e) => {
-  if (e.key === 'Enter') loginWithToken();
-});
-els.logout.addEventListener('click', ()=>{ 
-  clearToken(); 
-  setSignedIn(null);
-  els.status.textContent = '';
-});
-els.copyBtn.addEventListener('click', ()=>{
-  els.shareUrl.select(); 
-  navigator.clipboard.writeText(els.shareUrl.value).then(() => {
-    els.status.textContent = 'Link copied to clipboard.';
-  }).catch(() => {
-    document.execCommand('copy');
-    els.status.textContent = 'Link copied to clipboard.';
-  });
-});
-els.refreshBtn.addEventListener('click', ()=>renderRecent());
-
-/* ---------- Dark mode toggle ---------- */
-function toggleTheme() {
-  const html = document.documentElement;
-  const currentTheme = html.getAttribute('data-theme');
-  const newTheme = currentTheme === 'dark' ? '' : 'dark';
-  
-  html.setAttribute('data-theme', newTheme);
-  sessionStorage.setItem('theme', newTheme);
-  
-  els.themeToggle.textContent = newTheme === 'dark' ? '☀️' : '🌙';
-}
-
-els.themeToggle.addEventListener('click', toggleTheme);
-
-/* ---------- Attach sort handlers using event delegation ---------- */
-document.querySelector('table thead').addEventListener('click', function(e) {
-  const th = e.target.closest('th.sortable');
-  if (th) {
-    const column = th.getAttribute('data-column');
-    sortTable(column);
-  }
-});
-
-/* Drag & drop */
-['dragenter','dragover'].forEach(ev=>{
-  els.dz.addEventListener(ev, e=>{ e.preventDefault(); els.dz.classList.add('drag'); });
-});
-['dragleave','drop'].forEach(ev=>{
-  els.dz.addEventListener(ev, e=>{ e.preventDefault(); els.dz.classList.remove('drag'); });
-});
-els.dz.addEventListener('click', ()=>els.fi.click());
-els.dz.addEventListener('drop', e=>{
-  const f = e.dataTransfer?.files?.[0];
-  if(f){ showSelected(f); uploadFile(f); }
-});
-els.fi.addEventListener('change', e=>{
-  const f = e.target.files?.[0];
-  if(f){ showSelected(f); uploadFile(f); }
-});
-function showSelected(f){
-  els.sel.style.display = '';
-  els.sel.textContent = `Selected: ${f.name} (${(f.size/1024/1024).toFixed(2)} MB)`;
-  els.afterUpload.style.display = 'none';
-  els.status.textContent = '';
-}
-
 /* ---------- Sort table ---------- */
 function sortTable(column) {
   console.log('sortTable called with column:', column);
@@ -641,6 +576,73 @@ async function renderRecent(){
   
   // Render with current sort
   renderTable();
+}
+
+/* ---------- UI wiring ---------- */
+els.loginBtn.addEventListener('click', loginWithToken);
+els.tokenInput.addEventListener('keypress', (e) => {
+  if (e.key === 'Enter') loginWithToken();
+});
+els.logout.addEventListener('click', ()=>{ 
+  clearToken(); 
+  setSignedIn(null);
+  els.status.textContent = '';
+});
+els.copyBtn.addEventListener('click', ()=>{
+  els.shareUrl.select(); 
+  navigator.clipboard.writeText(els.shareUrl.value).then(() => {
+    els.status.textContent = 'Link copied to clipboard.';
+  }).catch(() => {
+    document.execCommand('copy');
+    els.status.textContent = 'Link copied to clipboard.';
+  });
+});
+els.refreshBtn.addEventListener('click', ()=>renderRecent());
+
+/* ---------- Dark mode toggle ---------- */
+function toggleTheme() {
+  const html = document.documentElement;
+  const currentTheme = html.getAttribute('data-theme');
+  const newTheme = currentTheme === 'dark' ? '' : 'dark';
+  
+  html.setAttribute('data-theme', newTheme);
+  sessionStorage.setItem('theme', newTheme);
+  
+  els.themeToggle.textContent = newTheme === 'dark' ? '☀️' : '🌙';
+}
+
+els.themeToggle.addEventListener('click', toggleTheme);
+
+/* ---------- Attach sort handlers using event delegation ---------- */
+document.querySelector('table thead').addEventListener('click', function(e) {
+  const th = e.target.closest('th.sortable');
+  if (th) {
+    const column = th.getAttribute('data-column');
+    sortTable(column);
+  }
+});
+
+/* Drag & drop */
+['dragenter','dragover'].forEach(ev=>{
+  els.dz.addEventListener(ev, e=>{ e.preventDefault(); els.dz.classList.add('drag'); });
+});
+['dragleave','drop'].forEach(ev=>{
+  els.dz.addEventListener(ev, e=>{ e.preventDefault(); els.dz.classList.remove('drag'); });
+});
+els.dz.addEventListener('click', ()=>els.fi.click());
+els.dz.addEventListener('drop', e=>{
+  const f = e.dataTransfer?.files?.[0];
+  if(f){ showSelected(f); uploadFile(f); }
+});
+els.fi.addEventListener('change', e=>{
+  const f = e.target.files?.[0];
+  if(f){ showSelected(f); uploadFile(f); }
+});
+function showSelected(f){
+  els.sel.style.display = '';
+  els.sel.textContent = `Selected: ${f.name} (${(f.size/1024/1024).toFixed(2)} MB)`;
+  els.afterUpload.style.display = 'none';
+  els.status.textContent = '';
 }
 
 /* ---------- Boot ---------- */
