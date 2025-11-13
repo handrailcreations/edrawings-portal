@@ -22,6 +22,7 @@
   [data-theme="dark"] .chip{background:#374151;color:#f3f4f6}
   [data-theme="dark"] .help-text{background:#374151}
   [data-theme="dark"] .token-input, [data-theme="dark"] #shareUrl{background:#374151;color:#f3f4f6;border-color:#4b5563}
+  [data-theme="dark"] .btn:not(.copy):not(.delete){background:#f3f4f6;color:#111827}
   html,body{height:100%;margin:0;background:var(--bg);font:16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;color:var(--accent)}
   .wrap{display:grid;grid-template-rows:1fr 1fr;min-height:100vh;gap:16px;padding:16px;box-sizing:border-box}
   .card{background:var(--card);border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,.06);padding:20px;display:flex;flex-direction:column}
@@ -501,6 +502,15 @@ function toggleTheme() {
 
 els.themeToggle.addEventListener('click', toggleTheme);
 
+/* ---------- Attach sort handlers using event delegation ---------- */
+document.querySelector('table thead').addEventListener('click', function(e) {
+  const th = e.target.closest('th.sortable');
+  if (th) {
+    const column = th.getAttribute('data-column');
+    sortTable(column);
+  }
+});
+
 /* Drag & drop */
 ['dragenter','dragover'].forEach(ev=>{
   els.dz.addEventListener(ev, e=>{ e.preventDefault(); els.dz.classList.add('drag'); });
@@ -526,6 +536,7 @@ function showSelected(f){
 
 /* ---------- Sort table ---------- */
 function sortTable(column) {
+  console.log('sortTable called with column:', column);
   // Toggle direction if clicking same column
   if (currentSort.column === column) {
     currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
@@ -534,10 +545,12 @@ function sortTable(column) {
     currentSort.direction = column === 'date' ? 'desc' : 'asc'; // Default date to newest first
   }
   
+  console.log('Current sort:', currentSort);
   renderTable();
 }
 
 function renderTable() {
+  console.log('renderTable called, allFiles length:', allFiles.length);
   if (!allFiles.length) return;
   
   // Sort the files
